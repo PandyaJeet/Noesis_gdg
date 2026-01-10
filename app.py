@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Callable, List, Dict, Any
 
 from flask import Flask, render_template, request, redirect, url_for, flash
-
+#export GEMINI_API_KEY="your-key-here"
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret")
