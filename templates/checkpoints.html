@@ -34,22 +34,75 @@
         <div class="checkpoints-grid animate-enter delay-1">
             {% for checkpoint in checkpoints %}
             <article class="checkpoint-item">
-                <div>
-                    <span class="step-badge">Checkpoint {{ loop.index }}</span>
-                    
-                    <h3 style="margin-bottom: 12px; font-size: 1.4rem;">{{ checkpoint.title }}</h3>
-                    <p style="font-size: 0.95rem; margin-bottom: 24px;">{{ checkpoint.objective }}</p>
-                    
-                    <div style="margin-bottom: 24px;">
+                <div style="display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 12px;">
+                    <div>
+                        <span class="step-badge">Checkpoint {{ loop.index }}</span>
+                        <h3 style="margin-bottom: 10px; font-size: 1.4rem;">{{ checkpoint.title }}</h3>
+                        <p style="font-size: 0.95rem; margin-bottom: 8px;">{{ checkpoint.objective }}</p>
+                        <p style="font-size: 0.8rem; margin: 0; color: var(--text-low);">Validation: {{ checkpoint.validation_type }}</p>
+                    </div>
+                    <div style="text-align: right; min-width: 160px;">
                         <p style="font-size: 0.75rem; margin-bottom: 6px; color: var(--text-low); letter-spacing: 0.05em; text-transform: uppercase;">Core Concept</p>
-                        <span style="color: var(--brand-secondary); font-weight: 500;">{{ checkpoint.concept }}</span>
+                        <span style="color: var(--brand-secondary); font-weight: 600;">{{ checkpoint.concept }}</span>
                     </div>
                 </div>
 
-                <div class="checkpoint-meta">
-                    <a href="/checkpoints/{{ session_id }}?id={{ loop.index0 }}" class="btn btn-primary" style="width: 100%; justify-content: center;">
-                        Start Implementation
-                    </a>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+                    <section style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 14px;">
+                        <p style="font-size: 0.75rem; margin-bottom: 6px; color: var(--text-low); text-transform: uppercase; letter-spacing: 0.05em;">Function Signature</p>
+                        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; color: #a5b4fc;">{{ checkpoint.function_signature }}</div>
+                    </section>
+
+                    <section style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 14px;">
+                        <p style="font-size: 0.75rem; margin-bottom: 6px; color: var(--text-low); text-transform: uppercase; letter-spacing: 0.05em;">Expected Output</p>
+                        <p style="font-size: 0.95rem; margin: 0;">{{ checkpoint.expected_output }}</p>
+                    </section>
+
+                    <section style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 14px;">
+                        <p style="font-size: 0.75rem; margin-bottom: 10px; color: var(--text-low); text-transform: uppercase; letter-spacing: 0.05em;">Rules</p>
+                        {% if checkpoint.rules %}
+                        <ul style="padding-left: 16px; display: flex; flex-direction: column; gap: 6px;">
+                            {% for rule in checkpoint.rules %}
+                            <li style="font-size: 0.9rem; color: var(--text-medium);">{{ rule }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <p style="font-size: 0.9rem; color: var(--text-low); margin: 0;">No explicit rules provided.</p>
+                        {% endif %}
+                    </section>
+
+                    <section style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 14px;">
+                        <p style="font-size: 0.75rem; margin-bottom: 10px; color: var(--text-low); text-transform: uppercase; letter-spacing: 0.05em;">Hints</p>
+                        {% if checkpoint.hints %}
+                        <ul style="padding-left: 16px; display: flex; flex-direction: column; gap: 6px;">
+                            {% for hint in checkpoint.hints %}
+                            <li style="font-size: 0.9rem; color: var(--text-medium);">{{ hint }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <p style="font-size: 0.9rem; color: var(--text-low); margin: 0;">No hints supplied.</p>
+                        {% endif %}
+                    </section>
+
+                    <section style="grid-column: 1 / -1; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 14px;">
+                        <p style="font-size: 0.75rem; margin-bottom: 10px; color: var(--text-low); text-transform: uppercase; letter-spacing: 0.05em;">Sample Tests</p>
+                        {% if checkpoint.test_inputs %}
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px;">
+                            {% for input_item in checkpoint.test_inputs %}
+                            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); border-radius: 10px; padding: 10px;">
+                                <p style="font-size: 0.8rem; color: var(--text-low); margin-bottom: 6px;">Input</p>
+                                <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; color: var(--text-medium);">{{ input_item }}</div>
+                                {% if checkpoint.expected_outputs and checkpoint.expected_outputs|length > loop.index0 %}
+                                <p style="font-size: 0.8rem; color: var(--text-low); margin: 8px 0 6px;">Expected</p>
+                                <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; color: var(--text-medium);">{{ checkpoint.expected_outputs[loop.index0] }}</div>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <p style="font-size: 0.9rem; color: var(--text-low); margin: 0;">No sample tests provided.</p>
+                        {% endif %}
+                    </section>
                 </div>
             </article>
             {% endfor %}
