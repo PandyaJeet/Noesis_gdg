@@ -26,6 +26,9 @@
                     <div>
                         <span class="badge">#{{ chunk.rank }}</span>
                         <span class="score">score {{ '%.3f'|format(chunk.score) }}</span>
+                        {% if chunk.source %}
+                        <span class="source">{{ chunk.source }}</span>
+                        {% endif %}
                     </div>
                     <pre>{{ chunk.text | truncate(600, True, '...') }}</pre>
                 </li>

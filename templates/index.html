@@ -36,16 +36,11 @@
             </div>
 
             <div class="reference-context">
-                <label for="context-text">Reference context (optional)</label>
-                <textarea id="context-text" name="context_text"
-                          placeholder="Paste syllabus topics, notebook notes, or rubric details to ground the checkpoints."
-                          rows="6"></textarea>
-
                 <div class="file-row">
-                    <label for="context-file">Upload syllabus/notebook/PDF (.txt, .md, .ipynb, .json, .pdf)</label>
+                    <label for="context-file">Upload context (.txt, .md, .ipynb, .json, .pdf)</label>
                     <input type="file" id="context-file" name="context_file" accept=".txt,.md,.ipynb,.json,.pdf">
                 </div>
-                <p class="helper-text">We will retrieve the most relevant chunks from your context and align checkpoints to it.</p>
+                <p class="helper-text">If no file is uploaded, we use the backend corpus. Uploaded files ground this request.</p>
             </div>
 
             <button type="submit" class="primary-btn">Generate Checkpoints</button>

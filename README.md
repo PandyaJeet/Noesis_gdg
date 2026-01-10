@@ -7,10 +7,9 @@ Generate learning checkpoints with Gemini. You can now ground outputs on your ow
 - Export API key: `export GEMINI_API_KEY=your_key`
 - Run locally: `python app.py` then open http://localhost:5000
 
-## Using your syllabus/notebook (RAG)
-- In the form, paste reference text or upload `.txt`, `.md`, `.ipynb`, `.json`, or `.pdf` files.
-- We chunk up to ~20k characters, embed with Gemini, and retrieve the top chunks (shown with rank and score) to guide checkpoint generation.
-- The checkpoints page shows the exact chunks used so you can verify grounding.
+## RAG workflows
+- Backend corpus (default): place files in `data/context_sources` (supported: `.txt`, `.md`, `.ipynb`, `.json`, `.pdf`). On first request—or if `REFRESH_CONTEXT_ON_START=true`—the backend rebuilds `data/context_store.json` and serves all users.
+- Ad-hoc context (per request): on `/`, optionally paste text or upload a file; that request will be grounded on what you provide. If you leave it empty, the backend corpus is used.
 
 ## Notes
 - Keep the uploaded file reasonably small; large files are trimmed before chunking.

@@ -1,9 +1,10 @@
-"""Checkpoint generation and validation logic using Gemini with optional RAG."""
+"""Checkpoint generation and validation logic using Gemini with backend-driven RAG."""
 
 import json
 import math
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import google.generativeai as genai
@@ -14,6 +15,10 @@ CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 150
 RETRIEVAL_TOP_K = 4
 MAX_CONTEXT_CHARS = 20000
+CONTEXT_STORE_PATH = Path(os.getenv("CONTEXT_STORE_PATH", "data/context_store.json"))
+CONTEXT_SOURCE_DIR = Path(os.getenv("CONTEXT_SOURCE_DIR", "data/context_sources"))
+REFRESH_CONTEXT_ON_START = os.getenv("REFRESH_CONTEXT_ON_START", "false").lower() == "true"
+ALLOWED_SOURCE_SUFFIXES = {".txt", ".md", ".ipynb", ".json", ".pdf"}
 
 REQUIRED_FIELDS = {
     "title": "Untitled checkpoint",
@@ -34,6 +39,48 @@ def _get_api_key(api_key: Optional[str]) -> str:
     if not key:
         raise ValueError("GEMINI_API_KEY is required. Set env var or pass api_key.")
     return key
+
+
+def _ensure_store_dir() -> None:
+    CONTEXT_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _read_local_file_text(path: Path) -> str:
+    raw_bytes = path.read_bytes()
+    if not raw_bytes:
+        return ""
+
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(path)
+            pages = []
+            for page in reader.pages:
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages.append(text)
+            if pages:
+                return "\n".join(pages)
+        except Exception:
+            return raw_bytes.decode("utf-8", errors="ignore")
+
+    if suffix == ".ipynb":
+        try:
+            payload = json.loads(raw_bytes)
+            cells = payload.get("cells", [])
+            parts = []
+            for cell in cells:
+                source = cell.get("source", [])
+                if isinstance(source, list):
+                    parts.append("".join(source))
+                elif isinstance(source, str):
+                    parts.append(source)
+            return "\n".join(parts)
+        except Exception:
+            return raw_bytes.decode("utf-8", errors="ignore")
+
+    return raw_bytes.decode("utf-8", errors="ignore")
 
 
 def _coerce_str(value: Any, default: str) -> str:
@@ -120,38 +167,128 @@ def embed_text(content: str, api_key: str, task_type: str) -> List[float]:
     return embedding
 
 
-def retrieve_relevant_context(problem_statement: str, reference_text: str, api_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def _load_context_store() -> List[Dict[str, Any]]:
+    if not CONTEXT_STORE_PATH.exists():
+        return []
+    try:
+        with CONTEXT_STORE_PATH.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, list):
+            return data
+    except Exception:
+        return []
+    return []
+
+
+def _save_context_store(entries: List[Dict[str, Any]]) -> None:
+    _ensure_store_dir()
+    with CONTEXT_STORE_PATH.open("w", encoding="utf-8") as fh:
+        json.dump(entries, fh)
+
+
+def ingest_context_text(source_name: str, reference_text: str, api_key: Optional[str] = None) -> Dict[str, Any]:
     capped = (reference_text or "").strip()[:MAX_CONTEXT_CHARS]
     if not capped:
-        return None
+        raise ValueError("No reference text provided for ingestion.")
 
     chunks = chunk_text(capped)
     if not chunks:
-        return None
+        raise ValueError("Reference text could not be chunked for ingestion.")
 
     key = _get_api_key(api_key)
-    doc_embeddings: List[List[float]] = [
-        embed_text(chunk, key, task_type="retrieval_document") for chunk in chunks
-    ]
-    query_embedding = embed_text(problem_statement, key, task_type="retrieval_query")
+    entries = _load_context_store()
 
-    scored: List[Tuple[float, int]] = []
-    for idx, embedding in enumerate(doc_embeddings):
-        scored.append((cosine_similarity(query_embedding, embedding), idx))
+    for chunk in chunks:
+        embedding = embed_text(chunk, key, task_type="retrieval_document")
+        entries.append({
+            "source": source_name,
+            "text": chunk,
+            "embedding": embedding,
+        })
 
-    top = sorted(scored, key=lambda item: item[0], reverse=True)[:RETRIEVAL_TOP_K]
-    if not top:
+    _save_context_store(entries)
+    return {"added_chunks": len(chunks), "total_chunks": len(entries)}
+
+
+def rebuild_context_store_from_dir(source_dir: Path = CONTEXT_SOURCE_DIR, api_key: Optional[str] = None) -> Dict[str, Any]:
+    dir_path = source_dir if isinstance(source_dir, Path) else Path(source_dir)
+    if not dir_path.exists() or not dir_path.is_dir():
+        return {"added_chunks": 0, "total_chunks": 0, "sources": 0}
+
+    key = _get_api_key(api_key)
+    entries: List[Dict[str, Any]] = []
+    sources = 0
+    for file_path in sorted(dir_path.iterdir()):
+        if not file_path.is_file() or file_path.suffix.lower() not in ALLOWED_SOURCE_SUFFIXES:
+            continue
+        text = _read_local_file_text(file_path)
+        if not text.strip():
+            continue
+        sources += 1
+        capped = text.strip()[:MAX_CONTEXT_CHARS]
+        for chunk in chunk_text(capped):
+            embedding = embed_text(chunk, key, task_type="retrieval_document")
+            entries.append({
+                "source": file_path.name,
+                "text": chunk,
+                "embedding": embedding,
+            })
+
+    _save_context_store(entries)
+    return {"added_chunks": len(entries), "total_chunks": len(entries), "sources": sources}
+
+
+def retrieve_relevant_context(
+    problem_statement: str,
+    reference_text: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    key = _get_api_key(api_key)
+
+    # Use ad-hoc reference text if provided (backward-compatible), otherwise use stored corpus.
+    if reference_text:
+        capped = reference_text.strip()[:MAX_CONTEXT_CHARS]
+        chunks = chunk_text(capped)
+        corpus = [
+            {"text": chunk, "embedding": embed_text(chunk, key, task_type="retrieval_document"), "source": "ad-hoc"}
+            for chunk in chunks
+        ]
+    else:
+        if REFRESH_CONTEXT_ON_START or not CONTEXT_STORE_PATH.exists():
+            rebuild_context_store_from_dir(CONTEXT_SOURCE_DIR, key)
+        corpus = _load_context_store()
+        if not corpus:
+            rebuild_context_store_from_dir(CONTEXT_SOURCE_DIR, key)
+            corpus = _load_context_store()
+
+    if not corpus:
         return None
 
+    query_embedding = embed_text(problem_statement, key, task_type="retrieval_query")
+
+    scored: List[Tuple[float, Dict[str, Any]]] = []
+    for entry in corpus:
+        embedding = entry.get("embedding")
+        if not isinstance(embedding, list):
+            continue
+        score = cosine_similarity(query_embedding, embedding)
+        scored.append((score, entry))
+
+    if not scored:
+        return None
+
+    top = sorted(scored, key=lambda item: item[0], reverse=True)[:RETRIEVAL_TOP_K]
     selected_strings: List[str] = []
     display_chunks: List[Dict[str, Any]] = []
-    for rank, (score, idx) in enumerate(top, start=1):
-        chunk = chunks[idx]
-        selected_strings.append(f"[Chunk {rank}] {chunk}")
+    for rank, (score, entry) in enumerate(top, start=1):
+        chunk_text_val = entry.get("text", "")
+        source = entry.get("source", "uploaded")
+        selected_strings.append(f"[Chunk {rank} | {source}] {chunk_text_val}")
         display_chunks.append({
             "rank": rank,
             "score": round(float(score), 3),
-            "text": chunk,
+            "text": chunk_text_val,
+            "source": source,
         })
 
     return {
@@ -231,8 +368,8 @@ def generate_checkpoints(
     model_name: str = DEFAULT_MODEL,
     reference_text: Optional[str] = None,
     return_retrieval: bool = False,
-) -> List[Dict[str, Any]] | Tuple[List[Dict[str, Any]], Optional[str]]:
-    retrieved_context = retrieve_relevant_context(problem_statement, reference_text, api_key) if reference_text else None
+) -> List[Dict[str, Any]] | Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    retrieved_context = retrieve_relevant_context(problem_statement, reference_text, api_key)
     prompt = build_prompt(problem_statement, retrieved_context=retrieved_context)
     raw_text = call_gemini(prompt, api_key=api_key, model_name=model_name)
     parsed = extract_json(raw_text)
