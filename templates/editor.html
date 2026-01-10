@@ -3,99 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Code Editor - Checkpoint {{ checkpoint_id + 1 }}</title>
+    <title>Editor - Checkpoint {{ checkpoint_id + 1 }} | Noesis</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-    <div class="container editor-container">
-        <header>
-            <h1>✍️ Checkpoint {{ checkpoint_id + 1 }}: {{ checkpoint.title }}</h1>
-            <a href="/checkpoints/{{ session_id }}" class="btn secondary-btn">Back to Checkpoints</a>
-        </header>
+<body style="overflow: hidden;">
+    <nav class="navbar" style="position: relative;">
+        <div class="nav-brand">
+            <div class="brand-mark">N</div>
+            <span>Noesis Workstation</span>
+        </div>
+        <div class="nav-links">
+            <span style="font-size: 0.9rem; color: var(--text-low); margin-right: 20px;">Checkpoint {{ checkpoint_id + 1 }}/{{ session_len if session_len else '?' }}</span>
+            <a href="/checkpoints/{{ session_id }}" class="btn btn-secondary" style="font-size: 0.8rem; padding: 6px 12px;">Exit</a>
+        </div>
+    </nav>
 
+    <main class="container" style="max-width: 100%; margin: 0; padding: 20px 24px; height: calc(100vh - var(--header-height));">
         <div class="editor-layout">
-            <div class="instructions-panel">
-                <h2>📖 Instructions</h2>
-                
-                <div class="instruction-section">
-                    <h3>Objective</h3>
-                    <p>{{ checkpoint.objective }}</p>
+            <!-- Sidebar: Instructions -->
+            <aside class="sidebar beauty-scroll">
+                <header style="margin-bottom: 32px;">
+                     <h2 style="font-size: 1.5rem; margin-bottom: 8px;">{{ checkpoint.title }}</h2>
+                     <div style="font-size: 0.85rem; color: var(--brand-secondary);">{{ checkpoint.concept }}</div>
+                </header>
+
+                <div style="display: flex; flex-direction: column; gap: 32px;">
+                    <section>
+                        <h4 style="color: var(--text-low); font-size: 0.75rem; font-weight:700; text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.05em;">Objective</h4>
+                        <p style="font-size: 0.95rem;">{{ checkpoint.objective }}</p>
+                    </section>
+
+                    <section>
+                         <h4 style="color: var(--text-low); font-size: 0.75rem; font-weight:700; text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.05em;">Signature</h4>
+                        <div style="background: rgba(0,0,0,0.3); padding: 16px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #a5b4fc; border: 1px solid rgba(255,255,255,0.05); overflow-x: auto;">
+                            {{ checkpoint.function_signature }}
+                        </div>
+                    </section>
+
+                    <section>
+                        <h4 style="color: var(--text-low); font-size: 0.75rem; font-weight:700; text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.05em;">Requirements</h4>
+                        <ul style="padding-left: 20px; color: var(--text-medium); display: flex; flex-direction: column; gap: 8px;">
+                            {% for rule in checkpoint.rules %}
+                            <li style="font-size: 0.9rem;">{{ rule }}</li>
+                            {% endfor %}
+                        </ul>
+                    </section>
                 </div>
+            </aside>
 
-                <div class="instruction-section">
-                    <h3>Concept to Learn</h3>
-                    <p>{{ checkpoint.concept }}</p>
-                </div>
-
-                <div class="instruction-section">
-                    <h3>Function Signature</h3>
-                    <pre><code>{{ checkpoint.function_signature }}</code></pre>
-                </div>
-
-                <div class="instruction-section">
-                    <h3>Requirements</h3>
-                    <ul>
-                        {% for rule in checkpoint.rules %}
-                        <li>{{ rule }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-
-                <div class="instruction-section">
-                    <h3>Expected Behavior</h3>
-                    <p>{{ checkpoint.expected_output }}</p>
-                </div>
-
-                {% if checkpoint.hints %}
-                <div class="instruction-section hints">
-                    <h3>💡 Hints</h3>
-                    <ul>
-                        {% for hint in checkpoint.hints %}
-                        <li>{{ hint }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
-            </div>
-
-            <div class="code-panel">
-                <div class="code-header">
-                    <h2>Your Code</h2>
-                    <button id="submit-btn" class="primary-btn">Submit for Validation</button>
-                </div>
-
-                <textarea id="code-editor" 
-                          placeholder="Write your implementation here...&#10;&#10;def your_function():&#10;    pass">{{ previous_code }}</textarea>
-
-                <div id="validation-result" class="validation-result hidden">
-                    <div class="result-header">
-                        <span class="result-icon"></span>
-                        <span class="result-title"></span>
+            <!-- Main Editor Area -->
+            <div class="editor-wrapper">
+                <div style="border-bottom: 1px solid #333; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; background: #18181b;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
+                        <span style="font-size: 0.85rem; color: #a1a1aa; font-family: 'JetBrains Mono', monospace;">solution.py</span>
                     </div>
-                    <div class="result-message"></div>
-                    <div class="result-details"></div>
+                    <button id="submit-btn" class="btn btn-primary" style="padding: 6px 16px; font-size: 0.8rem; height: 32px; min-height: unset;">
+                        <span id="btn-text">Run Tests</span>
+                    </button>
+                </div>
+                
+                <textarea id="code-editor" spellcheck="false" style="line-height: 1.6;">{{ previous_code }}</textarea>
+
+                <div id="validation-panel" style="border-top: 1px solid #333; height: 200px; background: #0f0f11; overflow-y: auto; padding: 20px; font-family: 'JetBrains Mono', monospace;">
+                    <div style="font-size: 0.8rem; color: #52525b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">Console Output</div>
+                    <div id="console-output" style="color: #d4d4d4; font-size: 0.9rem; white-space: pre-wrap;">Ready for execution...</div>
                 </div>
             </div>
         </div>
-    </div>
+    </main>
 
     <script>
         const sessionId = '{{ session_id }}';
-        const checkpointId = { checkpoint_id };
+        const checkpointId = Number('{{ checkpoint_id }}');
+        const submitBtn = document.getElementById('submit-btn');
+        const outputPanel = document.getElementById('console-output');
 
-        document.getElementById('submit-btn').addEventListener('click', async () => {
+        submitBtn.addEventListener('click', async () => {
             const code = document.getElementById('code-editor').value;
-            const submitBtn = document.getElementById('submit-btn');
-            const resultDiv = document.getElementById('validation-result');
-
-            if (!code.trim()) {
-                alert('Please write some code first!');
-                return;
-            }
-
+            const btnText = document.getElementById('btn-text');
+            
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Validating...';
-            resultDiv.classList.add('hidden');
+            btnText.textContent = 'Running...';
+            outputPanel.innerHTML = '<span style="color: #6366f1;">> system: initiating validation sequence...</span>';
 
             try {
                 const response = await fetch('/submit_code', {
@@ -109,56 +99,34 @@
                 });
 
                 const result = await response.json();
-                displayResult(result);
+                renderResult(result);
             } catch (error) {
-                alert('Error submitting code. Please try again.');
-                console.error(error);
+                outputPanel.innerHTML += '\n<span style="color: #ef4444;">> system error: ' + error.message + '</span>';
             } finally {
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Submit for Validation';
+                btnText.textContent = 'Run Tests';
             }
         });
 
-        function displayResult(result) {
-            const resultDiv = document.getElementById('validation-result');
-            const icon = resultDiv.querySelector('.result-icon');
-            const title = resultDiv.querySelector('.result-title');
-            const message = resultDiv.querySelector('.result-message');
-            const details = resultDiv.querySelector('.result-details');
-
-            resultDiv.classList.remove('hidden', 'success', 'error');
-
+        function renderResult(result) {
+            let html = '<div style="margin-top: 12px;">';
             if (result.passed) {
-                resultDiv.classList.add('success');
-                icon.textContent = '✅';
-                title.textContent = 'Checkpoint Passed!';
-                message.textContent = result.message;
-                details.innerHTML = '<p><strong>Next:</strong> Proceed to the next checkpoint</p>';
-                
-                setTimeout(() => {
-                    if (confirm('Great job! Ready to move to the next checkpoint?')) {
-                        window.location.href = `/checkpoints/${sessionId}`;
-                    }
-                }, 1500);
-            } else {
-                resultDiv.classList.add('error');
-                icon.textContent = '❌';
-                title.textContent = 'Not Quite Right';
-                message.textContent = result.message;
-                
-                let detailsHTML = '<div class="feedback-list">';
-                if (result.hints && result.hints.length > 0) {
-                    detailsHTML += '<h4>Hints to improve:</h4><ul>';
-                    result.hints.forEach(hint => {
-                        detailsHTML += `<li>${hint}</li>`;
-                    });
-                    detailsHTML += '</ul>';
+                html += '<div style="color: #10b981; font-weight: bold; margin-bottom: 8px;">✓ TESTS PASSED</div>';
+                html += '<div>' + (result.message || 'Great job! Proceeding to next checkpoint...') + '</div>';
+                // Show next button or auto-redirect
+                if (result.next_url) {
+                     setTimeout(() => window.location.href = result.next_url, 1500);
                 }
-                detailsHTML += '</div>';
-                details.innerHTML = detailsHTML;
+            } else {
+                html += '<div style="color: #ef4444; font-weight: bold; margin-bottom: 8px;">✗ CHECKPOINT FAILED</div>';
+                html += '<div style="color: #f87171;">' + (result.message || 'Logic error detected.') + '</div>';
             }
-
-            resultDiv.classList.remove('hidden');
+            html += '</div>';
+            outputPanel.innerHTML += html;
+            
+            // Scroll to bottom
+            const container = document.getElementById('validation-panel');
+            container.scrollTop = container.scrollHeight;
         }
     </script>
 </body>
