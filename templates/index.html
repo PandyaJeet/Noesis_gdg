@@ -23,7 +23,7 @@
         {% endif %}
         {% endwith %}
 
-        <form class="problem-input-section" method="POST" action="{{ url_for('generate') }}">
+        <form class="problem-input-section" method="POST" action="{{ url_for('generate') }}" enctype="multipart/form-data">
             <label for="problem-input">What do you want to build?</label>
             <textarea id="problem-input" name="problem"
                       placeholder="Example: Build a URL shortener; it should create unique short codes, store mappings, and support redirects."
@@ -33,6 +33,19 @@
                 <button type="button" class="pill" data-example="Build a URL shortener that stores URL mappings and returns short codes.">URL Shortener</button>
                 <button type="button" class="pill" data-example="Create a calculator API that supports add, subtract, multiply, divide with error handling.">Calculator API</button>
                 <button type="button" class="pill" data-example="Build a todo list manager with create/read/update/delete tasks and priorities.">Todo Manager</button>
+            </div>
+
+            <div class="reference-context">
+                <label for="context-text">Reference context (optional)</label>
+                <textarea id="context-text" name="context_text"
+                          placeholder="Paste syllabus topics, notebook notes, or rubric details to ground the checkpoints."
+                          rows="6"></textarea>
+
+                <div class="file-row">
+                    <label for="context-file">Upload syllabus/notebook/PDF (.txt, .md, .ipynb, .json, .pdf)</label>
+                    <input type="file" id="context-file" name="context_file" accept=".txt,.md,.ipynb,.json,.pdf">
+                </div>
+                <p class="helper-text">We will retrieve the most relevant chunks from your context and align checkpoints to it.</p>
             </div>
 
             <button type="submit" class="primary-btn">Generate Checkpoints</button>

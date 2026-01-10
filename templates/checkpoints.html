@@ -17,6 +17,28 @@
         <div class="alert error">{{ error }}</div>
         {% endif %}
 
+        {% if retrieval_chunks %}
+        <div class="alert info">
+            <strong>Grounded on your context (top {{ retrieval_chunks|length }} chunks)</strong>
+            <ul class="retrieval-list">
+                {% for chunk in retrieval_chunks %}
+                <li>
+                    <div>
+                        <span class="badge">#{{ chunk.rank }}</span>
+                        <span class="score">score {{ '%.3f'|format(chunk.score) }}</span>
+                    </div>
+                    <pre>{{ chunk.text | truncate(600, True, '...') }}</pre>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% elif retrieved_context %}
+        <div class="alert info">
+            <strong>Grounded on your context</strong>
+            <pre>{{ retrieved_context | truncate(1200, True, '...') }}</pre>
+        </div>
+        {% endif %}
+
         {% if not checkpoints %}
         <p class="empty-state">No checkpoints to show yet.</p>
         {% else %}

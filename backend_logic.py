@@ -1,13 +1,19 @@
-"""Checkpoint generation and validation logic using Gemini."""
+"""Checkpoint generation and validation logic using Gemini with optional RAG."""
 
 import json
+import math
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import google.generativeai as genai
 
 DEFAULT_MODEL = "gemini-2.5-flash"
+EMBED_MODEL = "models/text-embedding-004"
+CHUNK_SIZE = 1200
+CHUNK_OVERLAP = 150
+RETRIEVAL_TOP_K = 4
+MAX_CONTEXT_CHARS = 20000
 
 REQUIRED_FIELDS = {
     "title": "Untitled checkpoint",
@@ -21,6 +27,13 @@ REQUIRED_FIELDS = {
     "expected_outputs": [],
     "validation_type": "custom",
 }
+
+
+def _get_api_key(api_key: Optional[str]) -> str:
+    key = api_key or os.getenv("GEMINI_API_KEY") or ""
+    if not key:
+        raise ValueError("GEMINI_API_KEY is required. Set env var or pass api_key.")
+    return key
 
 
 def _coerce_str(value: Any, default: str) -> str:
@@ -72,7 +85,82 @@ def normalize_checkpoints(raw: Any) -> List[Dict[str, Any]]:
     return normalized_list
 
 
-def build_prompt(problem_statement: str) -> str:
+def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return []
+
+    # Simple character-based chunking with overlap to preserve context between segments.
+    chunks: List[str] = []
+    cursor = 0
+    while cursor < len(cleaned):
+        end = min(len(cleaned), cursor + chunk_size)
+        chunks.append(cleaned[cursor:end])
+        cursor = end - overlap if end - overlap > cursor else end
+    return chunks
+
+
+def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def embed_text(content: str, api_key: str, task_type: str) -> List[float]:
+    genai.configure(api_key=api_key)
+    response = genai.embed_content(model=EMBED_MODEL, content=content, task_type=task_type)
+    embedding = response.get("embedding") if isinstance(response, dict) else getattr(response, "embedding", None)
+    if embedding is None:
+        raise RuntimeError("Failed to obtain embedding from Gemini.")
+    return embedding
+
+
+def retrieve_relevant_context(problem_statement: str, reference_text: str, api_key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    capped = (reference_text or "").strip()[:MAX_CONTEXT_CHARS]
+    if not capped:
+        return None
+
+    chunks = chunk_text(capped)
+    if not chunks:
+        return None
+
+    key = _get_api_key(api_key)
+    doc_embeddings: List[List[float]] = [
+        embed_text(chunk, key, task_type="retrieval_document") for chunk in chunks
+    ]
+    query_embedding = embed_text(problem_statement, key, task_type="retrieval_query")
+
+    scored: List[Tuple[float, int]] = []
+    for idx, embedding in enumerate(doc_embeddings):
+        scored.append((cosine_similarity(query_embedding, embedding), idx))
+
+    top = sorted(scored, key=lambda item: item[0], reverse=True)[:RETRIEVAL_TOP_K]
+    if not top:
+        return None
+
+    selected_strings: List[str] = []
+    display_chunks: List[Dict[str, Any]] = []
+    for rank, (score, idx) in enumerate(top, start=1):
+        chunk = chunks[idx]
+        selected_strings.append(f"[Chunk {rank}] {chunk}")
+        display_chunks.append({
+            "rank": rank,
+            "score": round(float(score), 3),
+            "text": chunk,
+        })
+
+    return {
+        "joined": "\n\n".join(selected_strings),
+        "display": display_chunks,
+    }
+
+
+def build_prompt(problem_statement: str, retrieved_context: Optional[Any] = None) -> str:
     schema = {
         "title": "Short name of the checkpoint (<= 8 words).",
         "objective": "Student-facing goal for this step.",
@@ -85,15 +173,26 @@ def build_prompt(problem_statement: str) -> str:
         "expected_outputs": "Outputs aligned to test_inputs.",
         "validation_type": "One of: structure, correctness, integration, custom.",
     }
+    context_block = ""
+    if retrieved_context:
+        context_text = retrieved_context.get("joined") if isinstance(retrieved_context, dict) else str(retrieved_context)
+        context_block = (
+            "Reference context (ground checkpoints on this material first):\n"
+            f"{context_text}\n"
+            "Use only details present in the reference context; do not invent topics.\n"
+        )
+
     prompt = (
         "You are an instructional designer generating programming checkpoints.\n"
         "Return ONLY valid JSON (no prose) representing a list of checkpoint objects.\n"
         "Each checkpoint must follow this JSON schema: " + json.dumps(schema, indent=2) + "\n"
+        + context_block +
         "Rules:\n"
         "- 3 to 6 checkpoints total.\n"
         "- Keep titles concise.\n"
         "- Provide actionable rules and hints.\n"
         "- Prefer Pythonic, beginner-friendly guidance.\n"
+        "- If reference context exists, align objectives, concepts, and tests to it.\n"
         "Problem statement:\n" + problem_statement.strip() + "\n"
         "Respond with JSON array only.\n"
     )
@@ -117,9 +216,7 @@ def extract_json(text: str) -> Any:
 
 
 def call_gemini(prompt: str, api_key: Optional[str] = None, model_name: str = DEFAULT_MODEL) -> str:
-    key = api_key or os.getenv("GEMINI_API_KEY") or ""
-    if not key:
-        raise ValueError("GEMINI_API_KEY is required. Set env var or pass api_key.")
+    key = _get_api_key(api_key)
     genai.configure(api_key=key)
     model = genai.GenerativeModel(model_name, generation_config={"temperature": 0.2})
     response = model.generate_content(prompt)
@@ -128,13 +225,22 @@ def call_gemini(prompt: str, api_key: Optional[str] = None, model_name: str = DE
     return response.text
 
 
-def generate_checkpoints(problem_statement: str, api_key: Optional[str] = None, model_name: str = DEFAULT_MODEL) -> List[Dict[str, Any]]:
-    prompt = build_prompt(problem_statement)
+def generate_checkpoints(
+    problem_statement: str,
+    api_key: Optional[str] = None,
+    model_name: str = DEFAULT_MODEL,
+    reference_text: Optional[str] = None,
+    return_retrieval: bool = False,
+) -> List[Dict[str, Any]] | Tuple[List[Dict[str, Any]], Optional[str]]:
+    retrieved_context = retrieve_relevant_context(problem_statement, reference_text, api_key) if reference_text else None
+    prompt = build_prompt(problem_statement, retrieved_context=retrieved_context)
     raw_text = call_gemini(prompt, api_key=api_key, model_name=model_name)
     parsed = extract_json(raw_text)
     checkpoints = normalize_checkpoints(parsed)
     if not checkpoints:
         raise ValueError("Gemini returned no checkpoints after parsing.")
+    if return_retrieval:
+        return checkpoints, retrieved_context
     return checkpoints
 
 
