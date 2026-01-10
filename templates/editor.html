@@ -9,13 +9,13 @@
 <body>
     <div class="container editor-container">
         <header>
-            <h1>✍️ Checkpoint {{ checkpoint_id + 1 }}: {{ checkpoint.title }}</h1>
+            <h1>Checkpoint {{ checkpoint_id + 1 }}: {{ checkpoint.title }}</h1>
             <a href="/checkpoints/{{ session_id }}" class="btn secondary-btn">Back to Checkpoints</a>
         </header>
 
         <div class="editor-layout">
             <div class="instructions-panel">
-                <h2>📖 Instructions</h2>
+                <h2>Instructions</h2>
                 
                 <div class="instruction-section">
                     <h3>Objective</h3>
@@ -48,7 +48,7 @@
 
                 {% if checkpoint.hints %}
                 <div class="instruction-section hints">
-                    <h3>💡 Hints</h3>
+                    <h3>Hints</h3>
                     <ul>
                         {% for hint in checkpoint.hints %}
                         <li>{{ hint }}</li>
