@@ -1,25 +1,46 @@
+import json
 import os
-import threading
-import webbrowser
-from importlib import reload
-from typing import List, Dict, Any
+from pathlib import Path
+from typing import Callable, List, Dict, Any
 
 from flask import Flask, render_template, request, redirect, url_for, flash
-
-import backend_logic as bl
+#export GEMINI_API_KEY="your-key-here"
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret")
 
+NOTEBOOK_PATH = Path(__file__).resolve().parent / "backend_logic.ipynb"
+_generate_fn_cache: Callable[[str], List[Dict[str, Any]]] | None = None
+_notebook_mtime: float | None = None
 
-def get_generator() -> Any:
-    # Reload on each request to pick up edits without restarting the server.
-    return reload(bl).generate_checkpoints
 
+def load_notebook_generator() -> Callable[[str], List[Dict[str, Any]]]:
+    global _generate_fn_cache, _notebook_mtime
+    current_mtime = NOTEBOOK_PATH.stat().st_mtime
+    if _generate_fn_cache is not None and _notebook_mtime == current_mtime:
+        return _generate_fn_cache
 
-def _open_browser(url: str) -> None:
-    # Open the app in the default browser after the server starts.
-    webbrowser.open(url)
+    with NOTEBOOK_PATH.open("r", encoding="utf-8") as f:
+        nb = json.load(f)
+
+    namespace: Dict[str, Any] = {}
+    for cell in nb.get("cells", []):
+        if cell.get("cell_type") != "code":
+            continue
+        source = "".join(cell.get("source", []))
+        if not source.strip():
+            continue
+        if source.lstrip().startswith("pip "):
+            # avoid running installer cells
+            continue
+        exec(source, namespace)
+
+    if "generate_checkpoints" not in namespace:
+        raise RuntimeError("generate_checkpoints not found in notebook")
+
+    _generate_fn_cache = namespace["generate_checkpoints"]
+    _notebook_mtime = current_mtime
+    return _generate_fn_cache
 
 
 @app.route("/", methods=["GET"])
@@ -37,7 +58,7 @@ def generate():
     checkpoints: List[Dict[str, Any]] = []
     error: str | None = None
     try:
-        generator = get_generator()
+        generator = load_notebook_generator()
         checkpoints = generator(problem)
     except Exception as exc:  # pylint: disable=broad-except
         error = f"Failed to generate checkpoints: {exc}"
@@ -51,8 +72,4 @@ def generate():
 
 
 if __name__ == "__main__":
-    # Avoid double-opening when the reloader spawns a child process.
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
-        threading.Timer(1.0, _open_browser, args=["http://localhost:5000"]).start()
-
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, port=5000)
